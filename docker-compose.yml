@@ -1,0 +1,379 @@
+name: ${COMPOSE_PROJECT_NAME:-devstack}
+
+services:
+  web:
+    build:
+      context: ./services/web
+    depends_on:
+      php:
+        condition: service_started
+    environment:
+      DEFAULT_PROJECT: ${DEFAULT_PROJECT:-default}
+      DEVSTACK_DOMAIN: ${DEVSTACK_DOMAIN:-localhost}
+    ports:
+      - "${APP_HOST:-0.0.0.0}:${APP_PORT:-80}:80"
+      - "${APP_HOST:-0.0.0.0}:${APP_SSL_PORT:-443}:443"
+    volumes:
+      - ./projects:/var/www/projects
+      - ./services/web/templates:/etc/nginx/templates:ro
+      - ./core/certs:/etc/nginx/certs:ro
+    networks:
+      - devstack
+    restart: unless-stopped
+
+  php:
+    build:
+      context: ./services/php
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.3}
+        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole uuid xdebug xsl yaml zip}
+        PHP_PECL_EXTENSIONS: ${PHP_PECL_EXTENSIONS:-}
+        INSTALL_BLACKFIRE: ${PHP_INSTALL_BLACKFIRE:-false}
+        INSTALL_XHPROF: ${PHP_INSTALL_XHPROF:-false}
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: ${MYSQL_DATABASE:-devstack}
+      DB_USERNAME: ${MYSQL_USER:-devstack}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-devstack}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+      PHP_MEMORY_LIMIT: ${PHP_MEMORY_LIMIT:-512M}
+      PHP_UPLOAD_MAX_FILESIZE: ${PHP_UPLOAD_MAX_FILESIZE:-64M}
+      PHP_POST_MAX_SIZE: ${PHP_POST_MAX_SIZE:-64M}
+      HOST_UID: ${HOST_UID:-1000}
+      HOST_GID: ${HOST_GID:-1000}
+    volumes:
+      - ./projects:/var/www/projects
+      - ./services/php/conf.d/devstack.ini:/usr/local/etc/php/conf.d/devstack.ini:ro
+    working_dir: /var/www/projects/${DEFAULT_PROJECT:-default}
+    networks:
+      - devstack
+    restart: unless-stopped
+
+  php81:
+    build:
+      context: ./services/php
+      args:
+        PHP_VERSION: 8.1
+        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole uuid xdebug xsl yaml zip}
+        PHP_PECL_EXTENSIONS: ${PHP_PECL_EXTENSIONS:-}
+        INSTALL_BLACKFIRE: ${PHP_INSTALL_BLACKFIRE:-false}
+        INSTALL_XHPROF: ${PHP_INSTALL_XHPROF:-false}
+    environment:
+      HOST_UID: ${HOST_UID:-1000}
+      HOST_GID: ${HOST_GID:-1000}
+    volumes:
+      - ./projects:/var/www/projects
+    networks:
+      - devstack
+    profiles:
+      - php-multi
+
+  php82:
+    build:
+      context: ./services/php
+      args:
+        PHP_VERSION: 8.2
+        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole uuid xdebug xsl yaml zip}
+        PHP_PECL_EXTENSIONS: ${PHP_PECL_EXTENSIONS:-}
+        INSTALL_BLACKFIRE: ${PHP_INSTALL_BLACKFIRE:-false}
+        INSTALL_XHPROF: ${PHP_INSTALL_XHPROF:-false}
+    environment:
+      HOST_UID: ${HOST_UID:-1000}
+      HOST_GID: ${HOST_GID:-1000}
+    volumes:
+      - ./projects:/var/www/projects
+    networks:
+      - devstack
+    profiles:
+      - php-multi
+
+  php84:
+    build:
+      context: ./services/php
+      args:
+        PHP_VERSION: 8.4
+        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole uuid xdebug xsl yaml zip}
+        PHP_PECL_EXTENSIONS: ${PHP_PECL_EXTENSIONS:-}
+        INSTALL_BLACKFIRE: ${PHP_INSTALL_BLACKFIRE:-false}
+        INSTALL_XHPROF: ${PHP_INSTALL_XHPROF:-false}
+    environment:
+      HOST_UID: ${HOST_UID:-1000}
+      HOST_GID: ${HOST_GID:-1000}
+    volumes:
+      - ./projects:/var/www/projects
+    networks:
+      - devstack
+    profiles:
+      - php-multi
+
+  node:
+    build:
+      context: ./services/node
+      args:
+        NODE_VERSION: ${NODE_VERSION:-20}
+    working_dir: /var/www/projects/${DEFAULT_PROJECT:-default}
+    volumes:
+      - ./projects:/var/www/projects
+    networks:
+      - devstack
+    profiles:
+      - tools
+
+  mysql:
+    image: mysql:${MYSQL_VERSION:-8.0}
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-devstack}
+      MYSQL_USER: ${MYSQL_USER:-devstack}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-devstack}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./services/mysql/conf.d:/etc/mysql/conf.d:ro
+    networks:
+      - devstack
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  mariadb:
+    image: mariadb:${MARIADB_VERSION:-11.4}
+    environment:
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-devstack}
+      MARIADB_USER: ${MARIADB_USER:-devstack}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-devstack}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
+    ports:
+      - "${MARIADB_PORT:-3307}:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    networks:
+      - devstack
+    profiles:
+      - db
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:${POSTGRES_VERSION:-16}-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-devstack}
+      POSTGRES_USER: ${POSTGRES_USER:-devstack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devstack}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - devstack
+    profiles:
+      - db
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:${MONGO_VERSION:-7}
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-devstack}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-devstack}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - devstack
+    profiles:
+      - nosql
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - devstack
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  memcached:
+    image: memcached:1.6-alpine
+    ports:
+      - "${MEMCACHED_PORT:-11211}:11211"
+    networks:
+      - devstack
+    profiles:
+      - cache
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_HTTP_PORT:-8025}:8025"
+    networks:
+      - devstack
+    profiles:
+      - tools
+    restart: unless-stopped
+
+  adminer:
+    image: adminer:4
+    environment:
+      ADMINER_DEFAULT_SERVER: mysql
+    ports:
+      - "${ADMINER_PORT:-8081}:8080"
+    networks:
+      - devstack
+    profiles:
+      - tools
+    restart: unless-stopped
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      UPLOAD_LIMIT: ${PHP_UPLOAD_MAX_FILESIZE:-64M}
+    ports:
+      - "${PHPMYADMIN_PORT:-8082}:80"
+    networks:
+      - devstack
+    profiles:
+      - tools
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@devstack.local
+      PGADMIN_DEFAULT_PASSWORD: devstack
+    ports:
+      - "${PGADMIN_PORT:-8083}:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - devstack
+    profiles:
+      - db
+    restart: unless-stopped
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "${REDIS_COMMANDER_PORT:-8084}:8081"
+    networks:
+      - devstack
+    profiles:
+      - tools
+    restart: unless-stopped
+
+  mongo-express:
+    image: mongo-express:1
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME:-devstack}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-devstack}
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_BASICAUTH: "false"
+    ports:
+      - "${MONGO_EXPRESS_PORT:-8085}:8081"
+    networks:
+      - devstack
+    profiles:
+      - nosql
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:${RABBITMQ_VERSION:-3.13}-management-alpine
+    ports:
+      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
+      - "${RABBITMQ_HTTP_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - devstack
+    profiles:
+      - queue
+    restart: unless-stopped
+
+  solr:
+    image: solr:${SOLR_VERSION:-9}
+    ports:
+      - "${SOLR_PORT:-8983}:8983"
+    volumes:
+      - solr-data:/var/solr
+    networks:
+      - devstack
+    profiles:
+      - search
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:${MINIO_VERSION:-latest}
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-devstack}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-devstack123}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - devstack
+    profiles:
+      - storage
+    restart: unless-stopped
+
+  intranet:
+    image: php:8.3-apache
+    ports:
+      - "${INTRANET_PORT:-8079}:80"
+    volumes:
+      - ./core/intranet:/var/www/html:ro
+      - ./projects:/var/www/projects:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - devstack
+    profiles:
+      - tools
+    restart: unless-stopped
+
+networks:
+  devstack:
+    name: ${COMPOSE_PROJECT_NAME:-devstack}_network
+
+volumes:
+  mysql-data:
+    name: ${COMPOSE_PROJECT_NAME:-devstack}_mysql_data
+  mariadb-data:
+    name: ${COMPOSE_PROJECT_NAME:-devstack}_mariadb_data
+  postgres-data:
+    name: ${COMPOSE_PROJECT_NAME:-devstack}_postgres_data
+  pgadmin-data:
+    name: ${COMPOSE_PROJECT_NAME:-devstack}_pgadmin_data
+  mongo-data:
+    name: ${COMPOSE_PROJECT_NAME:-devstack}_mongo_data
+  redis-data:
+    name: ${COMPOSE_PROJECT_NAME:-devstack}_redis_data
+  rabbitmq-data:
+    name: ${COMPOSE_PROJECT_NAME:-devstack}_rabbitmq_data
+  solr-data:
+    name: ${COMPOSE_PROJECT_NAME:-devstack}_solr_data
+  minio-data:
+    name: ${COMPOSE_PROJECT_NAME:-devstack}_minio_data

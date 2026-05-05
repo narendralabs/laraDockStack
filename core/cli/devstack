@@ -1,0 +1,365 @@
+#!/usr/bin/env sh
+set -eu
+
+env_file=".env"
+env_example=".env.example"
+php_full_extensions="amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole uuid xdebug xsl yaml zip"
+
+ensure_env_file() {
+  if [ ! -f "$env_file" ]; then
+    if [ ! -f "$env_example" ]; then
+      printf '%s\n' "Missing .env and .env.example" >&2
+      exit 1
+    fi
+    cp "$env_example" "$env_file"
+    printf '%s\n' "Created .env from .env.example"
+  fi
+}
+
+set_env_value() {
+  key="$1"
+  value="$2"
+  ensure_env_file
+
+  tmp="${env_file}.tmp"
+  if grep -q "^$key=" "$env_file"; then
+    awk -v key="$key" -v value="$value" '
+      BEGIN { prefix = key "=" }
+      index($0, prefix) == 1 { print key "=" value; next }
+      { print }
+    ' "$env_file" > "$tmp"
+  else
+    cp "$env_file" "$tmp"
+    printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  fi
+  mv "$tmp" "$env_file"
+}
+
+env_value() {
+  key="$1"
+  fallback="$2"
+
+  if [ -f "$env_file" ] && grep -q "^$key=" "$env_file"; then
+    grep "^$key=" "$env_file" | tail -n 1 | cut -d '=' -f 2-
+    return
+  fi
+
+  printf '%s\n' "$fallback"
+}
+
+extract_laravel_constraint() {
+  composer_file="$1"
+
+  if [ ! -f "$composer_file" ]; then
+    return 1
+  fi
+
+  awk '
+    /"laravel\/framework"[[:space:]]*:/ || /"illuminate\/support"[[:space:]]*:/ {
+      line = $0
+      sub(/^[^:]*:[[:space:]]*"/, "", line)
+      sub(/".*$/, "", line)
+      print line
+      exit
+    }
+  ' "$composer_file"
+}
+
+major_from_constraint() {
+  constraint="$1"
+
+  printf '%s\n' "$constraint" | sed 's/[^0-9.]/ /g' | awk '
+    {
+      for (i = 1; i <= NF; i++) {
+        split($i, parts, ".")
+        if (parts[1] != "") {
+          print parts[1]
+          exit
+        }
+      }
+    }
+  '
+}
+
+php_for_laravel_major() {
+  major="$1"
+
+  case "$major" in
+    13) printf '%s\n' "8.4" ;;
+    12) printf '%s\n' "8.3" ;;
+    11) printf '%s\n' "8.3" ;;
+    10) printf '%s\n' "8.2" ;;
+    9) printf '%s\n' "8.1" ;;
+    8) printf '%s\n' "8.0" ;;
+    *) printf '%s\n' "$(env_value PHP_DEFAULT_VERSION 8.3)" ;;
+  esac
+}
+
+normalize_extension_name() {
+  extension="$1"
+
+  case "$extension" in
+    mysql|mysqli) printf '%s\n' "pdo_mysql" ;;
+    pgsql|postgres|postgresql) printf '%s\n' "pdo_pgsql" ;;
+    memcache|memcached) printf '%s\n' "memcached" ;;
+    *) printf '%s\n' "$extension" ;;
+  esac
+}
+
+composer_required_extensions() {
+  composer_file="$1"
+
+  if [ ! -f "$composer_file" ]; then
+    return 0
+  fi
+
+  awk '
+    match($0, /"ext-[A-Za-z0-9_+-]+"/) {
+      ext = substr($0, RSTART + 5, RLENGTH - 6)
+      print ext
+    }
+  ' "$composer_file"
+}
+
+extension_supported() {
+  extension="$1"
+
+  case "$extension" in
+    amqp|apcu|ast|bcmath|bz2|calendar|ctype|curl|dom|exif|fileinfo|filter|ftp|gd|gettext|gmp|igbinary|imagick|imap|intl|ldap|mbstring|memcached|mongodb|mysqli|opcache|pcntl|pdo|pdo_mysql|pdo_pgsql|pgsql|redis|soap|sockets|swoole|uuid|xdebug|xsl|yaml|zip)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+extension_is_pecl() {
+  extension="$1"
+
+  case "$extension" in
+    __unused_pecl_split__)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+append_unique_words() {
+  words="$1"
+  addition="$2"
+
+  printf '%s %s\n' "$words" "$addition" | awk '
+    {
+      for (i = 1; i <= NF; i++) {
+        if (!seen[$i]++) {
+          values[++count] = $i
+        }
+      }
+    }
+    END {
+      for (i = 1; i <= count; i++) {
+        printf "%s%s", values[i], (i == count ? ORS : OFS)
+      }
+    }
+  '
+}
+
+detect_project_extensions() {
+  project="$1"
+  composer_file="projects/$project/composer.json"
+  base_extensions="$php_full_extensions"
+  base_pecl=""
+  docker_extensions="$base_extensions"
+  pecl_extensions="$base_pecl"
+  unsupported=""
+
+  for required in $(composer_required_extensions "$composer_file"); do
+    extension="$(normalize_extension_name "$required")"
+    if extension_supported "$extension"; then
+      if extension_is_pecl "$extension"; then
+        pecl_extensions="$(append_unique_words "$pecl_extensions" "$extension")"
+      else
+        docker_extensions="$(append_unique_words "$docker_extensions" "$extension")"
+      fi
+    else
+      unsupported="$(append_unique_words "$unsupported" "$required")"
+    fi
+  done
+
+  printf '%s\n' "$docker_extensions"
+  printf '%s\n' "$pecl_extensions"
+  printf '%s\n' "$unsupported"
+}
+
+detect_project_php() {
+  project="$1"
+  composer_file="projects/$project/composer.json"
+
+  constraint="$(extract_laravel_constraint "$composer_file" || true)"
+  if [ -z "$constraint" ]; then
+    printf '%s\n' "$(env_value PHP_DEFAULT_VERSION 8.3)"
+    return
+  fi
+
+  major="$(major_from_constraint "$constraint")"
+  if [ -z "$major" ]; then
+    printf '%s\n' "$(env_value PHP_DEFAULT_VERSION 8.3)"
+    return
+  fi
+
+  php_for_laravel_major "$major"
+}
+
+configure_project_runtime() {
+  project="$1"
+
+  if [ ! -d "projects/$project" ]; then
+    printf '%s\n' "Project not found: projects/$project" >&2
+    exit 1
+  fi
+
+  php_version="$(detect_project_php "$project")"
+  extensions="$(detect_project_extensions "$project")"
+  php_extensions="$(printf '%s\n' "$extensions" | sed -n '1p')"
+  php_pecl_extensions="$(printf '%s\n' "$extensions" | sed -n '2p')"
+  unsupported_extensions="$(printf '%s\n' "$extensions" | sed -n '3p')"
+
+  set_env_value DEFAULT_PROJECT "$project"
+  set_env_value PHP_VERSION "$php_version"
+  set_env_value PHP_EXTENSIONS "$php_extensions"
+  set_env_value PHP_PECL_EXTENSIONS "$php_pecl_extensions"
+
+  printf '%s\n' "DEFAULT_PROJECT=$project"
+  printf '%s\n' "PHP_VERSION=$php_version"
+  printf '%s\n' "PHP_EXTENSIONS=$php_extensions"
+  printf '%s\n' "PHP_PECL_EXTENSIONS=$php_pecl_extensions"
+
+  if [ -n "$unsupported_extensions" ]; then
+    printf '%s\n' "Unsupported Composer ext-* requirements: $unsupported_extensions" >&2
+  fi
+}
+
+command="${1:-help}"
+shift || true
+
+case "$command" in
+  create)
+    project="${1:-}"
+    if [ -z "$project" ]; then
+      printf '%s\n' "Usage: devstack create project-name" >&2
+      exit 1
+    fi
+    target="projects/$project/public"
+    if [ -e "projects/$project" ]; then
+      printf '%s\n' "Project already exists: projects/$project" >&2
+      exit 1
+    fi
+    mkdir -p "$target"
+    cat > "$target/index.php" <<PHP
+<?php
+
+header('Content-Type: application/json');
+
+echo json_encode([
+    'project' => '$project',
+    'status' => 'ok',
+    'php' => PHP_VERSION,
+], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+PHP
+    printf '%s\n' "Created projects/$project"
+    printf '%s\n' "Open http://$project.localhost"
+    ;;
+  use|runtime)
+    project="${1:-$(env_value DEFAULT_PROJECT default)}"
+    configure_project_runtime "$project"
+    ;;
+  up)
+    if [ "${1:-}" != "" ] && [ -d "projects/$1" ]; then
+      configure_project_runtime "$1"
+      shift
+    elif [ "$(env_value DEVSTACK_RUNTIME_MODE auto)" = "auto" ]; then
+      configure_project_runtime "$(env_value DEFAULT_PROJECT default)"
+    fi
+    docker compose up -d "$@"
+    ;;
+  full)
+    if [ "${1:-}" != "" ] && [ -d "projects/$1" ]; then
+      configure_project_runtime "$1"
+      shift
+    elif [ "$(env_value DEVSTACK_RUNTIME_MODE auto)" = "auto" ]; then
+      configure_project_runtime "$(env_value DEFAULT_PROJECT default)"
+    fi
+    docker compose --profile db --profile nosql --profile cache --profile tools --profile queue --profile search --profile storage up -d "$@"
+    ;;
+  down)
+    docker compose down "$@"
+    ;;
+  build)
+    docker compose build "$@"
+    ;;
+  ps)
+    docker compose ps "$@"
+    ;;
+  logs)
+    docker compose logs -f "$@"
+    ;;
+  exec)
+    service="${1:-php}"
+    shift || true
+    docker compose exec "$service" "$@"
+    ;;
+  node)
+    docker compose run --rm node "$@"
+    ;;
+  composer)
+    docker compose exec php composer "$@"
+    ;;
+  host)
+    action="${1:-}"
+    domain="${2:-}"
+    if [ -z "$action" ] || [ -z "$domain" ]; then
+      printf '%s\n' "Usage: devstack host [add|remove] <domain>" >&2
+      exit 1
+    fi
+    case "$action" in
+      add)
+        if grep -q "127.0.0.1 $domain" /etc/hosts; then
+          printf '%s\n' "$domain is already in /etc/hosts"
+        else
+          printf '%s\n' "Adding $domain to /etc/hosts (requires sudo)..."
+          sudo bash -c "echo '127.0.0.1 $domain' >> /etc/hosts"
+          printf '%s\n' "Added $domain successfully."
+        fi
+        ;;
+      remove)
+        printf '%s\n' "Removing $domain from /etc/hosts (requires sudo)..."
+        sudo sed -i "/127.0.0.1 $domain/d" /etc/hosts
+        printf '%s\n' "Removed $domain successfully."
+        ;;
+      *)
+        printf '%s\n' "Unknown host action: $action" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  help|*)
+    printf '%s\n' "devstack commands:"
+    printf '%s\n' "  create NAME     Create a project in projects/NAME"
+    printf '%s\n' "  use NAME        Set active project and auto-detected PHP version"
+    printf '%s\n' "  runtime NAME    Print and save detected runtime for a project"
+    printf '%s\n' "  up              Start the stack"
+    printf '%s\n' "  up NAME         Set active project/runtime, then start the stack"
+    printf '%s\n' "  full            Start the stack with all service profiles"
+    printf '%s\n' "  down            Stop the stack"
+    printf '%s\n' "  build           Build local images"
+    printf '%s\n' "  ps              List containers"
+    printf '%s\n' "  logs [service]  Follow logs"
+    printf '%s\n' "  exec [service]  Execute in a running service"
+    printf '%s\n' "  node [args]     Run a one-off Node command"
+    printf '%s\n' "  composer [args] Run Composer in PHP"
+    printf '%s\n' "  host [add/rm]   Manage /etc/hosts records"
+    ;;
+esac

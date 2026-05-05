@@ -1,0 +1,47 @@
+map $host $devstack_project {
+    default ${DEFAULT_PROJECT};
+    ~^(?<subdomain>[^.]+)\.${DEVSTACK_DOMAIN}$ $subdomain;
+}
+
+server {
+    listen 80;
+    listen 443 ssl;
+    server_name _ *.${DEVSTACK_DOMAIN};
+    root /var/www/projects/$devstack_project/public;
+    index index.php index.html;
+
+    ssl_certificate /etc/nginx/certs/devstack.pem;
+    ssl_certificate_key /etc/nginx/certs/devstack-key.pem;
+
+    charset utf-8;
+    client_max_body_size 64m;
+
+    add_header X-Devstack-Project $devstack_project always;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location = /favicon.ico {
+        access_log off;
+        log_not_found off;
+    }
+
+    location = /robots.txt {
+        access_log off;
+        log_not_found off;
+    }
+
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_pass php:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param DOCUMENT_ROOT $realpath_root;
+        include fastcgi_params;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}

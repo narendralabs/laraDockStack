@@ -1,0 +1,9 @@
+.env
+.DS_Store
+
+projects/*/vendor/
+projects/*/node_modules/
+projects/*/.env
+
+.docker/mysql/
+.docker/redis/
