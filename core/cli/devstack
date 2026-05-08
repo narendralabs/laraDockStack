@@ -167,6 +167,452 @@ append_unique_words() {
   '
 }
 
+web_profile_for_server() {
+  server="$1"
+
+  case "$server" in
+    nginx) printf '%s\n' "web-nginx" ;;
+    apache) printf '%s\n' "web-apache" ;;
+    *)
+      printf '%s\n' "Unsupported web server: $server" >&2
+      printf '%s\n' "Use one of: nginx, apache" >&2
+      exit 1
+      ;;
+  esac
+}
+
+profiles_without_web_server() {
+  profiles="$1"
+
+  printf '%s\n' "$profiles" | tr ',' ' ' | awk '
+    {
+      for (i = 1; i <= NF; i++) {
+        if ($i != "web-nginx" && $i != "web-apache" && !seen[$i]++) {
+          printf "%s%s", (count++ ? " " : ""), $i
+        }
+      }
+    }
+    END {
+      print ""
+    }
+  '
+}
+
+space_to_comma_list() {
+  words="$1"
+
+  printf '%s\n' "$words" | awk '
+    {
+      for (i = 1; i <= NF; i++) {
+        printf "%s%s", $i, (i == NF ? ORS : ",")
+      }
+      if (NF == 0) {
+        print ""
+      }
+    }
+  '
+}
+
+configure_web_server() {
+  server="$1"
+  profile="$(web_profile_for_server "$server")"
+  existing_profiles="$(env_value COMPOSE_PROFILES web-nginx)"
+  kept_profiles="$(profiles_without_web_server "$existing_profiles")"
+  profile_words="$(append_unique_words "$kept_profiles" "$profile")"
+  compose_profiles="$(space_to_comma_list "$profile_words")"
+
+  set_env_value WEB_SERVER "$server"
+  set_env_value COMPOSE_PROFILES "$compose_profiles"
+
+  printf '%s\n' "WEB_SERVER=$server"
+  printf '%s\n' "COMPOSE_PROFILES=$compose_profiles"
+}
+
+configure_minimal_profiles() {
+  server="$(env_value WEB_SERVER nginx)"
+  profile="$(web_profile_for_server "$server")"
+
+  set_env_value WEB_SERVER "$server"
+  set_env_value COMPOSE_PROFILES "$profile"
+
+  printf '%s\n' "WEB_SERVER=$server"
+  printf '%s\n' "COMPOSE_PROFILES=$profile"
+}
+
+selected_web_service() {
+  server="$(env_value WEB_SERVER nginx)"
+
+  case "$server" in
+    apache) printf '%s\n' "apache" ;;
+    nginx|*) printf '%s\n' "web" ;;
+  esac
+}
+
+profile_for_group() {
+  group="$1"
+
+  case "$group" in
+    web|httpd) web_profile_for_server "$(env_value WEB_SERVER nginx)" ;;
+    nginx) printf '%s\n' "web-nginx" ;;
+    apache) printf '%s\n' "web-apache" ;;
+    db|sql) printf '%s\n' "db" ;;
+    nosql) printf '%s\n' "nosql" ;;
+    cache) printf '%s\n' "cache" ;;
+    tools) printf '%s\n' "tools" ;;
+    runtimes|runtime|apps) printf '%s\n' "runtimes" ;;
+    queue) printf '%s\n' "queue" ;;
+    search) printf '%s\n' "search" ;;
+    storage) printf '%s\n' "storage" ;;
+    php-multi|phpmulti) printf '%s\n' "php-multi" ;;
+    *) return 1 ;;
+  esac
+}
+
+service_name() {
+  service="$1"
+
+  case "$service" in
+    httpd|web) selected_web_service ;;
+    nginx) printf '%s\n' "web" ;;
+    apache) printf '%s\n' "apache" ;;
+    rediscommander|redis-commander) printf '%s\n' "redis-commander" ;;
+    mongoexpress|mongo-express) printf '%s\n' "mongo-express" ;;
+    phpmyadmin|pma) printf '%s\n' "phpmyadmin" ;;
+    postgres|postgresql) printf '%s\n' "postgres" ;;
+    *) printf '%s\n' "$service" ;;
+  esac
+}
+
+enable_profile_group() {
+  group="$1"
+  profile="$(profile_for_group "$group")"
+  existing_profiles="$(env_value COMPOSE_PROFILES web-nginx)"
+
+  if [ "$profile" = "web-nginx" ]; then
+    configure_web_server nginx
+    return
+  fi
+
+  if [ "$profile" = "web-apache" ]; then
+    configure_web_server apache
+    return
+  fi
+
+  profile_words="$(append_unique_words "$(printf '%s\n' "$existing_profiles" | tr ',' ' ')" "$profile")"
+  compose_profiles="$(space_to_comma_list "$profile_words")"
+  set_env_value COMPOSE_PROFILES "$compose_profiles"
+  printf '%s\n' "COMPOSE_PROFILES=$compose_profiles"
+}
+
+disable_profile_group() {
+  group="$1"
+  profile="$(profile_for_group "$group")"
+  existing_profiles="$(env_value COMPOSE_PROFILES web-nginx)"
+
+  if [ "$profile" = "web-nginx" ] || [ "$profile" = "web-apache" ]; then
+    printf '%s\n' "Keep one web server enabled; use: devstack web [nginx|apache]" >&2
+    exit 1
+  fi
+
+  kept_profiles="$(printf '%s\n' "$existing_profiles" | tr ',' ' ' | awk -v profile="$profile" '
+    {
+      for (i = 1; i <= NF; i++) {
+        if ($i != profile && !seen[$i]++) {
+          printf "%s%s", (count++ ? " " : ""), $i
+        }
+      }
+    }
+    END { print "" }
+  ')"
+  compose_profiles="$(space_to_comma_list "$kept_profiles")"
+  set_env_value COMPOSE_PROFILES "$compose_profiles"
+  printf '%s\n' "COMPOSE_PROFILES=$compose_profiles"
+}
+
+print_services() {
+  printf '%s\n' "Web servers:"
+  printf '%s\n' "  nginx, apache"
+  printf '%s\n' ""
+  printf '%s\n' "Service groups:"
+  printf '%s\n' "  db       mariadb, postgres, pgadmin"
+  printf '%s\n' "  nosql    mongo, mongo-express"
+  printf '%s\n' "  cache    memcached"
+  printf '%s\n' "  tools    node, mailpit, adminer, phpmyadmin, redis-commander, intranet"
+  printf '%s\n' "  runtimes python, go"
+  printf '%s\n' "  queue    rabbitmq"
+  printf '%s\n' "  search   solr"
+  printf '%s\n' "  storage  minio"
+  printf '%s\n' ""
+  printf '%s\n' "Individual services:"
+  printf '%s\n' "  httpd, php, mysql, redis, node, python, go, mailpit, adminer, phpmyadmin, pgadmin"
+  printf '%s\n' "  mariadb, postgres, mongo, memcached, redis-commander, mongo-express"
+  printf '%s\n' "  rabbitmq, solr, minio, intranet"
+  printf '%s\n' ""
+  printf '%s\n' "Active:"
+  printf '%s\n' "  WEB_SERVER=$(env_value WEB_SERVER nginx)"
+  printf '%s\n' "  COMPOSE_PROFILES=$(env_value COMPOSE_PROFILES web-nginx)"
+}
+
+start_service_or_group() {
+  name="$1"
+
+  case "$name" in
+    nginx)
+      configure_web_server nginx
+      docker compose --profile web-nginx up -d
+      ;;
+    apache)
+      configure_web_server apache
+      docker compose --profile web-apache up -d
+      ;;
+    *)
+      if profile="$(profile_for_group "$name")"; then
+        docker compose --profile "$profile" up -d
+      else
+        docker compose up -d "$(service_name "$name")"
+      fi
+      ;;
+  esac
+}
+
+build_service_or_group() {
+  name="$1"
+
+  case "$name" in
+    nginx)
+      configure_web_server nginx
+      docker compose build web
+      ;;
+    apache)
+      configure_web_server apache
+      docker compose build apache
+      ;;
+    web|httpd)
+      docker compose build "$(selected_web_service)"
+      ;;
+    *)
+      if profile="$(profile_for_group "$name")"; then
+        docker compose --profile "$profile" build
+      else
+        docker compose build "$(service_name "$name")"
+      fi
+      ;;
+  esac
+}
+
+stop_service_or_group() {
+  name="$1"
+
+  case "$name" in
+    web|httpd) docker compose stop "$(selected_web_service)" ;;
+    nginx) docker compose stop web ;;
+    apache) docker compose stop apache ;;
+    db|sql) docker compose stop mariadb postgres pgadmin ;;
+    nosql) docker compose stop mongo mongo-express ;;
+    cache) docker compose stop memcached ;;
+    tools) docker compose stop node mailpit adminer phpmyadmin redis-commander intranet ;;
+    runtimes|runtime|apps) docker compose stop python go ;;
+    queue) docker compose stop rabbitmq ;;
+    search) docker compose stop solr ;;
+    storage) docker compose stop minio ;;
+    php-multi|phpmulti) docker compose stop php80 php81 php82 php83 php84 ;;
+    *) docker compose stop "$(service_name "$name")" ;;
+  esac
+}
+
+ensure_project_exists() {
+  project="$1"
+
+  if [ ! -d "projects/$project" ]; then
+    printf '%s\n' "Project not found: projects/$project" >&2
+    exit 1
+  fi
+}
+
+reverse_proxy_target() {
+  runtime="$1"
+  port="$2"
+
+  case "$runtime" in
+    node) printf '%s\n' "http://node:$port" ;;
+    python) printf '%s\n' "http://python:$port" ;;
+    go) printf '%s\n' "http://go:$port" ;;
+    http://*|https://*) printf '%s\n' "$runtime" ;;
+    *)
+      printf '%s\n' "Unsupported proxy target: $runtime" >&2
+      printf '%s\n' "Use node PORT, python PORT, go PORT, or a full http(s) URL." >&2
+      exit 1
+      ;;
+  esac
+}
+
+configure_reverse_proxy() {
+  project="$1"
+  runtime="$2"
+  port="${3:-}"
+
+  ensure_project_exists "$project"
+
+  if [ -z "$port" ]; then
+    case "$runtime" in
+      http://*|https://*) ;;
+      *)
+        printf '%s\n' "Usage: devstack proxy PROJECT [node|python|go] PORT" >&2
+        exit 1
+        ;;
+    esac
+  fi
+
+  target="$(reverse_proxy_target "$runtime" "$port")"
+  printf '%s\n' "$target" > "projects/$project/.reverse-proxy"
+  printf '%s\n' "reverse_proxy=$target" > "projects/$project/.devstack"
+  printf '%s\n' "Configured $project.$(env_value DEVSTACK_DOMAIN localhost) -> $target"
+}
+
+clear_reverse_proxy() {
+  project="$1"
+
+  ensure_project_exists "$project"
+  rm -f "projects/$project/.reverse-proxy"
+  printf '%s\n' "Removed reverse proxy metadata for $project"
+}
+
+set_project_php_version() {
+  project="$1"
+  version="$2"
+
+  ensure_project_exists "$project"
+  case "$version" in
+    8.0|8.1|8.2|8.3|8.4) ;;
+    *)
+      printf '%s\n' "Unsupported PHP version: $version" >&2
+      printf '%s\n' "Use one of: 8.0, 8.1, 8.2, 8.3, 8.4" >&2
+      exit 1
+      ;;
+  esac
+  printf '%s\n' "$version" > "projects/$project/.php-version"
+  printf '%s\n' "Set projects/$project/.php-version to $version"
+}
+
+list_projects() {
+  domain="$(env_value DEVSTACK_DOMAIN localhost)"
+
+  if [ ! -d projects ]; then
+    return
+  fi
+
+  for dir in projects/*; do
+    if [ -d "$dir" ]; then
+      project="$(basename "$dir")"
+      printf '%s\n' "$project http://$project.$domain"
+    fi
+  done
+}
+
+show_project_info() {
+  project="$1"
+  domain="$(env_value DEVSTACK_DOMAIN localhost)"
+
+  ensure_project_exists "$project"
+  printf '%s\n' "Project: $project"
+  printf '%s\n' "URL: http://$project.$domain"
+  if [ -f "projects/$project/.reverse-proxy" ]; then
+    printf '%s\n' "Reverse proxy: $(cat "projects/$project/.reverse-proxy")"
+  else
+    printf '%s\n' "Document root: projects/$project/public"
+  fi
+  if [ -f "projects/$project/.php-version" ]; then
+    printf '%s\n' "PHP version: $(cat "projects/$project/.php-version")"
+  fi
+}
+
+scaffold_project() {
+  project="$1"
+  template="${2:-php}"
+
+  if [ -e "projects/$project" ]; then
+    printf '%s\n' "Project already exists: projects/$project" >&2
+    exit 1
+  fi
+
+  case "$template" in
+    php|static)
+      target="projects/$project/public"
+      mkdir -p "$target"
+      cat > "$target/index.php" <<PHP
+<?php
+
+header('Content-Type: application/json');
+
+echo json_encode([
+    'project' => '$project',
+    'status' => 'ok',
+    'php' => PHP_VERSION,
+], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+PHP
+      ;;
+    python)
+      mkdir -p "projects/$project"
+      cp -R templates/python/. "projects/$project/"
+      configure_reverse_proxy "$project" python 8000
+      ;;
+    go)
+      mkdir -p "projects/$project"
+      cp -R templates/go/. "projects/$project/"
+      configure_reverse_proxy "$project" go 8080
+      ;;
+    laravel|wordpress)
+      mkdir -p "projects/$project/public"
+      cp -R "templates/$template/." "projects/$project/"
+      ;;
+    *)
+      printf '%s\n' "Unknown template: $template" >&2
+      printf '%s\n' "Use one of: php, static, laravel, wordpress, python, go" >&2
+      exit 1
+      ;;
+  esac
+
+  printf '%s\n' "Created projects/$project from $template template"
+  printf '%s\n' "Open http://$project.$(env_value DEVSTACK_DOMAIN localhost)"
+}
+
+serve_project() {
+  project="$1"
+  runtime="${2:-}"
+
+  ensure_project_exists "$project"
+
+  if [ -z "$runtime" ]; then
+    if [ -f "projects/$project/.reverse-proxy" ]; then
+      target="$(cat "projects/$project/.reverse-proxy")"
+      case "$target" in
+        *python:*) runtime="python" ;;
+        *go:*) runtime="go" ;;
+        *node:*) runtime="node" ;;
+      esac
+    fi
+  fi
+
+  case "$runtime" in
+    node)
+      docker compose --profile tools up -d node
+      docker compose exec --workdir "/var/www/projects/$project" node npm run dev -- --host 0.0.0.0
+      ;;
+    python)
+      docker compose --profile runtimes up -d python
+      docker compose exec --workdir "/var/www/projects/$project" python sh -lc 'if [ -f requirements.txt ]; then pip install -r requirements.txt; fi; uvicorn main:app --host 0.0.0.0 --port 8000'
+      ;;
+    go)
+      docker compose --profile runtimes up -d go
+      docker compose exec --workdir "/var/www/projects/$project" go go run .
+      ;;
+    *)
+      printf '%s\n' "Usage: devstack serve PROJECT [node|python|go]" >&2
+      exit 1
+      ;;
+  esac
+}
+
 detect_project_extensions() {
   project="$1"
   composer_file="projects/$project/composer.json"
@@ -249,34 +695,153 @@ case "$command" in
   create)
     project="${1:-}"
     if [ -z "$project" ]; then
-      printf '%s\n' "Usage: devstack create project-name" >&2
+      printf '%s\n' "Usage: devstack create project-name [php|static|laravel|wordpress|python|go]" >&2
       exit 1
     fi
-    target="projects/$project/public"
-    if [ -e "projects/$project" ]; then
-      printf '%s\n' "Project already exists: projects/$project" >&2
+    scaffold_project "$project" "${2:-php}"
+    ;;
+  projects|vhosts)
+    if [ -n "${1:-}" ]; then
+      show_project_info "$1"
+    else
+      list_projects
+    fi
+    ;;
+  proxy)
+    if [ -z "${1:-}" ] || [ -z "${2:-}" ]; then
+      printf '%s\n' "Usage: devstack proxy PROJECT [node|python|go] PORT" >&2
+      printf '%s\n' "   or: devstack proxy PROJECT http://service:port" >&2
       exit 1
     fi
-    mkdir -p "$target"
-    cat > "$target/index.php" <<PHP
-<?php
-
-header('Content-Type: application/json');
-
-echo json_encode([
-    'project' => '$project',
-    'status' => 'ok',
-    'php' => PHP_VERSION,
-], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-PHP
-    printf '%s\n' "Created projects/$project"
-    printf '%s\n' "Open http://$project.localhost"
+    configure_reverse_proxy "$1" "$2" "${3:-}"
+    ;;
+  unproxy)
+    if [ -z "${1:-}" ]; then
+      printf '%s\n' "Usage: devstack unproxy PROJECT" >&2
+      exit 1
+    fi
+    clear_reverse_proxy "$1"
+    ;;
+  php-version)
+    if [ -z "${1:-}" ] || [ -z "${2:-}" ]; then
+      printf '%s\n' "Usage: devstack php-version PROJECT VERSION" >&2
+      exit 1
+    fi
+    set_project_php_version "$1" "$2"
+    ;;
+  serve)
+    if [ -z "${1:-}" ]; then
+      printf '%s\n' "Usage: devstack serve PROJECT [node|python|go]" >&2
+      exit 1
+    fi
+    serve_project "$1" "${2:-}"
     ;;
   use|runtime)
     project="${1:-$(env_value DEFAULT_PROJECT default)}"
     configure_project_runtime "$project"
     ;;
+  web|web-server)
+    server="${1:-}"
+    if [ -z "$server" ]; then
+      printf '%s\n' "WEB_SERVER=$(env_value WEB_SERVER nginx)"
+      printf '%s\n' "COMPOSE_PROFILES=$(env_value COMPOSE_PROFILES web-nginx)"
+      printf '%s\n' "Usage: devstack web [nginx|apache]"
+      exit 0
+    fi
+    configure_web_server "$server"
+    ;;
+  services|service-list)
+    print_services
+    ;;
+  enable)
+    if [ -z "${1:-}" ]; then
+      printf '%s\n' "Usage: devstack enable [db|nosql|cache|tools|runtimes|queue|search|storage|php-multi]" >&2
+      exit 1
+    fi
+    for group in "$@"; do
+      enable_profile_group "$group"
+    done
+    ;;
+  disable)
+    if [ -z "${1:-}" ]; then
+      printf '%s\n' "Usage: devstack disable [db|nosql|cache|tools|runtimes|queue|search|storage|php-multi]" >&2
+      exit 1
+    fi
+    for group in "$@"; do
+      disable_profile_group "$group"
+    done
+    ;;
+  minimal)
+    configure_minimal_profiles
+    if [ "$(env_value DEVSTACK_RUNTIME_MODE auto)" = "auto" ]; then
+      configure_project_runtime "$(env_value DEFAULT_PROJECT default)"
+    fi
+    docker compose up -d
+    ;;
+  start|install)
+    if [ "${1:-}" = "--web" ] || [ "${1:-}" = "--nginx" ] || [ "${1:-}" = "--apache" ]; then
+      case "${1:-}" in
+        --web)
+          configure_web_server "${2:-}"
+          shift 2
+          ;;
+        --nginx)
+          configure_web_server nginx
+          shift
+          ;;
+        --apache)
+          configure_web_server apache
+          shift
+          ;;
+      esac
+    fi
+    if [ -z "${1:-}" ]; then
+      if [ "$(env_value DEVSTACK_RUNTIME_MODE auto)" = "auto" ]; then
+        configure_project_runtime "$(env_value DEFAULT_PROJECT default)"
+      fi
+      docker compose up -d
+    else
+      for service in "$@"; do
+        start_service_or_group "$service"
+      done
+    fi
+    ;;
+  stop)
+    if [ -z "${1:-}" ]; then
+      docker compose stop
+    else
+      for service in "$@"; do
+        stop_service_or_group "$service"
+      done
+    fi
+    ;;
+  restart)
+    if [ -z "${1:-}" ]; then
+      docker compose restart
+    else
+      for service in "$@"; do
+        stop_service_or_group "$service"
+        start_service_or_group "$service"
+      done
+    fi
+    ;;
   up)
+    if [ "${1:-}" = "--web" ] || [ "${1:-}" = "--nginx" ] || [ "${1:-}" = "--apache" ]; then
+      case "${1:-}" in
+        --web)
+          configure_web_server "${2:-}"
+          shift 2
+          ;;
+        --nginx)
+          configure_web_server nginx
+          shift
+          ;;
+        --apache)
+          configure_web_server apache
+          shift
+          ;;
+      esac
+    fi
     if [ "${1:-}" != "" ] && [ -d "projects/$1" ]; then
       configure_project_runtime "$1"
       shift
@@ -286,21 +851,62 @@ PHP
     docker compose up -d "$@"
     ;;
   full)
+    if [ "${1:-}" = "--web" ] || [ "${1:-}" = "--nginx" ] || [ "${1:-}" = "--apache" ]; then
+      case "${1:-}" in
+        --web)
+          configure_web_server "${2:-}"
+          shift 2
+          ;;
+        --nginx)
+          configure_web_server nginx
+          shift
+          ;;
+        --apache)
+          configure_web_server apache
+          shift
+          ;;
+      esac
+    fi
     if [ "${1:-}" != "" ] && [ -d "projects/$1" ]; then
       configure_project_runtime "$1"
       shift
     elif [ "$(env_value DEVSTACK_RUNTIME_MODE auto)" = "auto" ]; then
       configure_project_runtime "$(env_value DEFAULT_PROJECT default)"
     fi
-    docker compose --profile db --profile nosql --profile cache --profile tools --profile queue --profile search --profile storage up -d "$@"
+    docker compose --profile db --profile nosql --profile cache --profile tools --profile runtimes --profile queue --profile search --profile storage up -d "$@"
     ;;
   down)
     docker compose down "$@"
     ;;
   build)
-    docker compose build "$@"
+    if [ "${1:-}" = "--web" ] || [ "${1:-}" = "--nginx" ] || [ "${1:-}" = "--apache" ]; then
+      case "${1:-}" in
+        --web)
+          configure_web_server "${2:-}"
+          shift 2
+          ;;
+        --nginx)
+          configure_web_server nginx
+          shift
+          ;;
+        --apache)
+          configure_web_server apache
+          shift
+          ;;
+      esac
+    fi
+    if [ -z "${1:-}" ]; then
+      docker compose build
+    else
+      for service in "$@"; do
+        build_service_or_group "$service"
+      done
+    fi
     ;;
   ps)
+    docker compose ps "$@"
+    ;;
+  status)
     docker compose ps "$@"
     ;;
   logs)
@@ -310,6 +916,10 @@ PHP
     service="${1:-php}"
     shift || true
     docker compose exec "$service" "$@"
+    ;;
+  shell)
+    service="$(service_name "${1:-php}")"
+    docker compose exec "$service" sh
     ;;
   node)
     docker compose run --rm node "$@"
@@ -347,17 +957,38 @@ PHP
     ;;
   help|*)
     printf '%s\n' "devstack commands:"
-    printf '%s\n' "  create NAME     Create a project in projects/NAME"
+    printf '%s\n' "  create NAME [T] Create a project from php/static/laravel/wordpress/python/go"
+    printf '%s\n' "  projects        List project vhosts"
+    printf '%s\n' "  projects NAME   Show project routing metadata"
+    printf '%s\n' "  proxy NAME R P  Route project to node/python/go PORT"
+    printf '%s\n' "  proxy NAME URL  Route project to a full http(s) target"
+    printf '%s\n' "  unproxy NAME    Remove project reverse proxy metadata"
+    printf '%s\n' "  php-version N V Set per-project PHP version metadata"
+    printf '%s\n' "  serve NAME [R]  Run a Node, Python, or Go dev server"
     printf '%s\n' "  use NAME        Set active project and auto-detected PHP version"
     printf '%s\n' "  runtime NAME    Print and save detected runtime for a project"
+    printf '%s\n' "  web SERVER      Select nginx or apache as the active web server"
+    printf '%s\n' "  services        List selectable services and groups"
+    printf '%s\n' "  enable GROUP    Add a service group to COMPOSE_PROFILES"
+    printf '%s\n' "  disable GROUP   Remove a service group from COMPOSE_PROFILES"
+    printf '%s\n' "  minimal         Start only web, php, mysql, and redis"
+    printf '%s\n' "  start [NAME]    Start the stack, service, or service group"
+    printf '%s\n' "  install [NAME]  Alias for start, for selectable local services"
+    printf '%s\n' "  stop [NAME]     Stop the stack, service, or service group"
+    printf '%s\n' "  restart [NAME]  Restart the stack, service, or service group"
     printf '%s\n' "  up              Start the stack"
+    printf '%s\n' "  up --apache     Select Apache, then start the stack"
+    printf '%s\n' "  up --nginx      Select Nginx, then start the stack"
     printf '%s\n' "  up NAME         Set active project/runtime, then start the stack"
     printf '%s\n' "  full            Start the stack with all service profiles"
     printf '%s\n' "  down            Stop the stack"
-    printf '%s\n' "  build           Build local images"
+    printf '%s\n' "  build [NAME]    Build local images, service, or service group"
+    printf '%s\n' "  build --apache  Select Apache, then build local images"
     printf '%s\n' "  ps              List containers"
+    printf '%s\n' "  status          Alias for ps"
     printf '%s\n' "  logs [service]  Follow logs"
     printf '%s\n' "  exec [service]  Execute in a running service"
+    printf '%s\n' "  shell [service] Open a shell in a running service"
     printf '%s\n' "  node [args]     Run a one-off Node command"
     printf '%s\n' "  composer [args] Run Composer in PHP"
     printf '%s\n' "  host [add/rm]   Manage /etc/hosts records"

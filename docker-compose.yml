@@ -16,9 +16,33 @@ services:
     volumes:
       - ./projects:/var/www/projects
       - ./services/web/templates:/etc/nginx/templates:ro
-      - ./core/certs:/etc/nginx/certs:ro
+      - ./core/certs:/etc/nginx/certs
     networks:
       - devstack
+    profiles:
+      - web-nginx
+    restart: unless-stopped
+
+  apache:
+    build:
+      context: ./services/apache
+    depends_on:
+      php:
+        condition: service_started
+    environment:
+      DEFAULT_PROJECT: ${DEFAULT_PROJECT:-default}
+      DEVSTACK_DOMAIN: ${DEVSTACK_DOMAIN:-localhost}
+    ports:
+      - "${APP_HOST:-0.0.0.0}:${APP_PORT:-80}:80"
+      - "${APP_HOST:-0.0.0.0}:${APP_SSL_PORT:-443}:443"
+    volumes:
+      - ./projects:/var/www/projects
+      - ./services/apache/templates:/usr/local/apache2/templates:ro
+      - ./core/certs:/usr/local/apache2/certs
+    networks:
+      - devstack
+    profiles:
+      - web-apache
     restart: unless-stopped
 
   php:
@@ -53,6 +77,25 @@ services:
     networks:
       - devstack
     restart: unless-stopped
+
+  php80:
+    build:
+      context: ./services/php
+      args:
+        PHP_VERSION: 8.0
+        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole uuid xdebug xsl yaml zip}
+        PHP_PECL_EXTENSIONS: ${PHP_PECL_EXTENSIONS:-}
+        INSTALL_BLACKFIRE: ${PHP_INSTALL_BLACKFIRE:-false}
+        INSTALL_XHPROF: ${PHP_INSTALL_XHPROF:-false}
+    environment:
+      HOST_UID: ${HOST_UID:-1000}
+      HOST_GID: ${HOST_GID:-1000}
+    volumes:
+      - ./projects:/var/www/projects
+    networks:
+      - devstack
+    profiles:
+      - php-multi
 
   php81:
     build:
@@ -111,6 +154,25 @@ services:
     profiles:
       - php-multi
 
+  php83:
+    build:
+      context: ./services/php
+      args:
+        PHP_VERSION: 8.3
+        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole uuid xdebug xsl yaml zip}
+        PHP_PECL_EXTENSIONS: ${PHP_PECL_EXTENSIONS:-}
+        INSTALL_BLACKFIRE: ${PHP_INSTALL_BLACKFIRE:-false}
+        INSTALL_XHPROF: ${PHP_INSTALL_XHPROF:-false}
+    environment:
+      HOST_UID: ${HOST_UID:-1000}
+      HOST_GID: ${HOST_GID:-1000}
+    volumes:
+      - ./projects:/var/www/projects
+    networks:
+      - devstack
+    profiles:
+      - php-multi
+
   node:
     build:
       context: ./services/node
@@ -123,6 +185,32 @@ services:
       - devstack
     profiles:
       - tools
+
+  python:
+    build:
+      context: ./services/python
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.12}
+    working_dir: /var/www/projects/${DEFAULT_PROJECT:-default}
+    volumes:
+      - ./projects:/var/www/projects
+    networks:
+      - devstack
+    profiles:
+      - runtimes
+
+  go:
+    build:
+      context: ./services/go
+      args:
+        GO_VERSION: ${GO_VERSION:-1.22}
+    working_dir: /var/www/projects/${DEFAULT_PROJECT:-default}
+    volumes:
+      - ./projects:/var/www/projects
+    networks:
+      - devstack
+    profiles:
+      - runtimes
 
   mysql:
     image: mysql:${MYSQL_VERSION:-8.0}

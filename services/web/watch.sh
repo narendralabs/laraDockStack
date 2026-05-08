@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if [ ! -f /etc/nginx/certs/devstack.pem ] || [ ! -f /etc/nginx/certs/devstack-key.pem ]; then
+    mkdir -p /etc/nginx/certs
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /etc/nginx/certs/devstack-key.pem -out /etc/nginx/certs/devstack.pem -subj "/CN=*.localhost"
+fi
+
 # Give Nginx a moment to start initially
 sleep 2
 
@@ -11,8 +16,11 @@ generate_conf() {
         if [ -d "$dir" ]; then
             project=$(basename "$dir")
             if [ -f "$dir/.reverse-proxy" ]; then
-                port=$(cat "$dir/.reverse-proxy" | tr -d '\r')
-                if [[ "$port" =~ ^[0-9]+$ ]]; then
+                target=$(cat "$dir/.reverse-proxy" | tr -d '\r' | head -n 1)
+                if [[ "$target" =~ ^[0-9]+$ ]]; then
+                    target="http://node:$target"
+                fi
+                if [[ "$target" =~ ^https?://[A-Za-z0-9_.-]+(:[0-9]+)?(/.*)?$ ]]; then
                     cat >> $CONF_FILE <<EOF
 server {
     listen 80;
@@ -21,7 +29,7 @@ server {
     ssl_certificate /etc/nginx/certs/devstack.pem;
     ssl_certificate_key /etc/nginx/certs/devstack-key.pem;
     location / {
-        proxy_pass http://node:$port;
+        proxy_pass $target;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "Upgrade";

@@ -1,0 +1,93 @@
+ServerRoot "/usr/local/apache2"
+Listen 80
+Listen 443
+
+LoadModule mpm_event_module modules/mod_mpm_event.so
+LoadModule authz_core_module modules/mod_authz_core.so
+LoadModule dir_module modules/mod_dir.so
+LoadModule env_module modules/mod_env.so
+LoadModule headers_module modules/mod_headers.so
+LoadModule log_config_module modules/mod_log_config.so
+LoadModule mime_module modules/mod_mime.so
+LoadModule proxy_module modules/mod_proxy.so
+LoadModule proxy_fcgi_module modules/mod_proxy_fcgi.so
+LoadModule proxy_http_module modules/mod_proxy_http.so
+LoadModule rewrite_module modules/mod_rewrite.so
+LoadModule ssl_module modules/mod_ssl.so
+LoadModule unixd_module modules/mod_unixd.so
+LoadModule vhost_alias_module modules/mod_vhost_alias.so
+
+ServerName localhost
+User daemon
+Group daemon
+
+ErrorLog /proc/self/fd/2
+CustomLog /proc/self/fd/1 common
+
+TypesConfig conf/mime.types
+DirectoryIndex index.php index.html
+
+AddType application/x-httpd-php .php
+
+<Directory "/var/www/projects">
+    AllowOverride All
+    Require all granted
+</Directory>
+
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+IncludeOptional conf/extra/devstack-projects.conf
+
+<VirtualHost *:80>
+    ServerName localhost
+    DocumentRoot "/var/www/projects/${DEFAULT_PROJECT}/public"
+    Header always set X-Devstack-Project "${DEFAULT_PROJECT}"
+
+    <FilesMatch "\.php$">
+        SetHandler "proxy:fcgi://php:9000"
+    </FilesMatch>
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName localhost
+    DocumentRoot "/var/www/projects/${DEFAULT_PROJECT}/public"
+    Header always set X-Devstack-Project "${DEFAULT_PROJECT}"
+
+    SSLEngine on
+    SSLCertificateFile "/usr/local/apache2/certs/devstack.pem"
+    SSLCertificateKeyFile "/usr/local/apache2/certs/devstack-key.pem"
+
+    <FilesMatch "\.php$">
+        SetHandler "proxy:fcgi://php:9000"
+    </FilesMatch>
+</VirtualHost>
+
+<VirtualHost *:80>
+    ServerName wildcard.${DEVSTACK_DOMAIN}
+    ServerAlias *.${DEVSTACK_DOMAIN}
+    UseCanonicalName Off
+    VirtualDocumentRoot "/var/www/projects/%1/public"
+    Header always set X-Devstack-Project "%1"
+
+    <FilesMatch "\.php$">
+        SetHandler "proxy:fcgi://php:9000"
+    </FilesMatch>
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName wildcard.${DEVSTACK_DOMAIN}
+    ServerAlias *.${DEVSTACK_DOMAIN}
+    UseCanonicalName Off
+    VirtualDocumentRoot "/var/www/projects/%1/public"
+    Header always set X-Devstack-Project "%1"
+
+    SSLEngine on
+    SSLCertificateFile "/usr/local/apache2/certs/devstack.pem"
+    SSLCertificateKeyFile "/usr/local/apache2/certs/devstack-key.pem"
+
+    <FilesMatch "\.php$">
+        SetHandler "proxy:fcgi://php:9000"
+    </FilesMatch>
+</VirtualHost>

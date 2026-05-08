@@ -1,16 +1,21 @@
 # Feature Matrix
 
-This project is growing toward a Devilbox-style local development stack while keeping the default startup small. See [devilbox-reference.md](devilbox-reference.md) for the reference checklist.
+This project is growing toward a full local development stack while keeping the default startup small. See [devilbox-reference.md](devilbox-reference.md) for the reference checklist.
 
 ## Implemented
 
-- Environment-driven versions for PHP, Node, MySQL, MariaDB, PostgreSQL, MongoDB, RabbitMQ, Solr, and MinIO.
+- Environment-driven versions for PHP, Node, Python, Go, MySQL, MariaDB, PostgreSQL, MongoDB, RabbitMQ, Solr, and MinIO.
 - Multi-project document roots under `projects/<name>/public`.
 - Local vhosts with `<project>.localhost`.
-- PHP-FPM and Nginx for static files and PHP applications.
+- PHP-FPM with selectable Nginx or Apache HTTPD for static files and PHP applications.
+- CLI and `.env` web server selection using `WEB_SERVER` and `COMPOSE_PROFILES`.
 - MySQL and Redis in the default stack.
-- Optional MariaDB, PostgreSQL, MongoDB, Memcached, Mailpit, Adminer, phpMyAdmin, pgAdmin, Redis Commander, Mongo Express, RabbitMQ, Solr, and MinIO.
-- CLI helper for create, up, full, down, build, ps, logs, exec, composer, and node commands.
+- Optional Apache, MariaDB, PostgreSQL, MongoDB, Memcached, Mailpit, Adminer, phpMyAdmin, pgAdmin, Redis Commander, Mongo Express, RabbitMQ, Solr, and MinIO.
+- CLI helper for create, up, full, minimal, services, enable, disable, start, install, stop, restart, build, ps, logs, exec, composer, and node commands.
+- Selective on-demand service startup for web servers, service groups, and individual services.
+- Project templates for PHP/static, Python, Go, Laravel placeholder, and WordPress placeholder projects.
+- Per-project reverse proxy metadata for Node, Python, Go, or arbitrary HTTP targets.
+- Project vhost listing and routing inspection commands.
 - Intranet landing page for common tools.
 - Full practical PHP extension preset using `install-php-extensions`.
 - Laravel major version to PHP version detection.
@@ -26,4 +31,4 @@ This project is growing toward a Devilbox-style local development stack while ke
 - Framework templates for Laravel, WordPress, and API starters.
 - Status checks in the intranet using Docker metadata.
 - Linux host permission sync helpers.
-- Selective service commands matching Devilbox-style on-demand startup.
+- Runtime execution helpers for starting framework-specific development servers.

@@ -2,6 +2,11 @@
 
 Use these hostnames from application containers:
 
+- Nginx web server: `web:80`
+- Apache web server: `apache:80`
+- Node runtime: `node:<project-port>`
+- Python runtime: `python:<project-port>`
+- Go runtime: `go:<project-port>`
 - MySQL: `mysql:3306`
 - MariaDB: `mariadb:3306`
 - PostgreSQL: `postgres:5432`
