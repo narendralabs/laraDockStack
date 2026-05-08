@@ -3,7 +3,7 @@ set -eu
 
 env_file=".env"
 env_example=".env.example"
-php_full_extensions="amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole uuid xdebug xsl yaml zip"
+php_full_extensions="amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole xdebug xsl yaml zip"
 
 ensure_env_file() {
   if [ ! -f "$env_file" ]; then
@@ -688,10 +688,219 @@ configure_project_runtime() {
   fi
 }
 
+ask() {
+  prompt="$1"
+  default="$2"
+  printf "%s [%s]: " "$prompt" "$default" >&2
+  read -r _answer || _answer=""
+  printf '%s\n' "${_answer:-$default}"
+}
+
+ask_yn() {
+  prompt="$1"
+  default="${2:-no}"
+  printf "%s (yes/no) [%s]: " "$prompt" "$default" >&2
+  read -r _answer || _answer=""
+  printf '%s\n' "${_answer:-$default}"
+}
+
+yn_true() {
+  case "$1" in y|yes|Y|Yes|YES) return 0 ;; *) return 1 ;; esac
+}
+
 command="${1:-help}"
 shift || true
 
 case "$command" in
+  init)
+    ensure_env_file
+
+    printf '%s\n' ""
+    printf '%s\n' "=============================="
+    printf '%s\n' "  Devstack Setup Wizard"
+    printf '%s\n' "=============================="
+    printf '%s\n' "Press Enter to keep the value shown in [brackets]."
+    printf '%s\n' ""
+
+    # --- PHP ---
+    printf '%s\n' "-- PHP --"
+    v="$(ask "PHP version" "$(env_value PHP_VERSION 8.3)")"
+    set_env_value PHP_VERSION "$v"
+
+    v="$(ask "PHP memory limit" "$(env_value PHP_MEMORY_LIMIT 512M)")"
+    set_env_value PHP_MEMORY_LIMIT "$v"
+
+    v="$(ask "Upload max filesize" "$(env_value PHP_UPLOAD_MAX_FILESIZE 64M)")"
+    set_env_value PHP_UPLOAD_MAX_FILESIZE "$v"
+
+    printf '%s\n' ""
+    printf '%s\n' "PHP extensions — full preset:"
+    printf '%s\n' "  $php_full_extensions"
+    printf '%s\n' "Enter a custom list or press Enter to keep the full preset."
+    cur_ext="$(env_value PHP_EXTENSIONS "$php_full_extensions")"
+    printf "Extensions [full preset]: " >&2
+    read -r _ext_input || _ext_input=""
+    set_env_value PHP_EXTENSIONS "${_ext_input:-$cur_ext}"
+
+    v="$(ask_yn "Install Blackfire profiler" "$(env_value PHP_INSTALL_BLACKFIRE false)")"
+    if yn_true "$v"; then set_env_value PHP_INSTALL_BLACKFIRE "true"; else set_env_value PHP_INSTALL_BLACKFIRE "false"; fi
+
+    v="$(ask_yn "Install XHProf profiler" "$(env_value PHP_INSTALL_XHPROF false)")"
+    if yn_true "$v"; then set_env_value PHP_INSTALL_XHPROF "true"; else set_env_value PHP_INSTALL_XHPROF "false"; fi
+
+    # --- Node ---
+    printf '%s\n' ""
+    printf '%s\n' "-- Node --"
+    v="$(ask "Node version" "$(env_value NODE_VERSION 20)")"
+    set_env_value NODE_VERSION "$v"
+
+    # --- Databases ---
+    printf '%s\n' ""
+    printf '%s\n' "-- Databases --"
+    printf '%s\n' "MySQL is always on. The others are optional."
+    v="$(ask "MySQL version" "$(env_value MYSQL_VERSION 8.0)")"
+    set_env_value MYSQL_VERSION "$v"
+
+    enable_mariadb=false
+    v="$(ask_yn "Enable MariaDB" "no")"
+    if yn_true "$v"; then
+      enable_mariadb=true
+      v="$(ask "MariaDB version" "$(env_value MARIADB_VERSION 11.4)")"
+      set_env_value MARIADB_VERSION "$v"
+    fi
+
+    enable_postgres=false
+    v="$(ask_yn "Enable PostgreSQL" "no")"
+    if yn_true "$v"; then
+      enable_postgres=true
+      v="$(ask "PostgreSQL version" "$(env_value POSTGRES_VERSION 16)")"
+      set_env_value POSTGRES_VERSION "$v"
+    fi
+
+    enable_mongo=false
+    v="$(ask_yn "Enable MongoDB" "no")"
+    if yn_true "$v"; then
+      enable_mongo=true
+      v="$(ask "MongoDB version" "$(env_value MONGO_VERSION 7)")"
+      set_env_value MONGO_VERSION "$v"
+    fi
+
+    # --- Cache ---
+    printf '%s\n' ""
+    printf '%s\n' "-- Cache --"
+    printf '%s\n' "Redis is always on."
+    enable_memcached=false
+    v="$(ask_yn "Enable Memcached" "no")"
+    if yn_true "$v"; then enable_memcached=true; fi
+
+    # --- Tools ---
+    printf '%s\n' ""
+    printf '%s\n' "-- Dev Tools --"
+
+    enable_mailpit=false
+    v="$(ask_yn "Enable Mailpit (email testing)" "no")"
+    if yn_true "$v"; then enable_mailpit=true; fi
+
+    enable_adminer=false
+    v="$(ask_yn "Enable Adminer (DB admin UI)" "no")"
+    if yn_true "$v"; then enable_adminer=true; fi
+
+    enable_phpmyadmin=false
+    v="$(ask_yn "Enable phpMyAdmin (MySQL UI)" "no")"
+    if yn_true "$v"; then enable_phpmyadmin=true; fi
+
+    enable_pgadmin=false
+    if [ "$enable_postgres" = "true" ]; then
+      v="$(ask_yn "Enable pgAdmin (PostgreSQL UI)" "no")"
+      if yn_true "$v"; then enable_pgadmin=true; fi
+    fi
+
+    enable_redis_commander=false
+    v="$(ask_yn "Enable Redis Commander (Redis UI)" "no")"
+    if yn_true "$v"; then enable_redis_commander=true; fi
+
+    enable_mongo_express=false
+    if [ "$enable_mongo" = "true" ]; then
+      v="$(ask_yn "Enable Mongo Express (MongoDB UI)" "no")"
+      if yn_true "$v"; then enable_mongo_express=true; fi
+    fi
+
+    # --- Queue / Search / Storage ---
+    printf '%s\n' ""
+    printf '%s\n' "-- Queue / Search / Storage --"
+
+    enable_rabbitmq=false
+    v="$(ask_yn "Enable RabbitMQ" "no")"
+    if yn_true "$v"; then
+      enable_rabbitmq=true
+      v="$(ask "RabbitMQ version" "$(env_value RABBITMQ_VERSION 3.13)")"
+      set_env_value RABBITMQ_VERSION "$v"
+    fi
+
+    enable_solr=false
+    v="$(ask_yn "Enable Solr (full-text search)" "no")"
+    if yn_true "$v"; then
+      enable_solr=true
+      v="$(ask "Solr version" "$(env_value SOLR_VERSION 9)")"
+      set_env_value SOLR_VERSION "$v"
+    fi
+
+    enable_minio=false
+    v="$(ask_yn "Enable MinIO (S3-compatible storage)" "no")"
+    if yn_true "$v"; then enable_minio=true; fi
+
+    # --- Project ---
+    printf '%s\n' ""
+    printf '%s\n' "-- Project --"
+    v="$(ask "Default project name" "$(env_value DEFAULT_PROJECT default)")"
+    set_env_value DEFAULT_PROJECT "$v"
+
+    v="$(ask "Domain suffix" "$(env_value DEVSTACK_DOMAIN localhost)")"
+    set_env_value DEVSTACK_DOMAIN "$v"
+
+    # --- Build COMPOSE_PROFILES ---
+    profiles=""
+    if [ "$enable_mariadb" = "true" ] || [ "$enable_postgres" = "true" ] || [ "$enable_pgadmin" = "true" ]; then
+      profiles="$(append_unique_words "$profiles" "db")"
+    fi
+    if [ "$enable_mongo" = "true" ] || [ "$enable_mongo_express" = "true" ]; then
+      profiles="$(append_unique_words "$profiles" "nosql")"
+    fi
+    if [ "$enable_memcached" = "true" ]; then
+      profiles="$(append_unique_words "$profiles" "cache")"
+    fi
+    if [ "$enable_mailpit" = "true" ] || [ "$enable_adminer" = "true" ] || [ "$enable_phpmyadmin" = "true" ] || [ "$enable_redis_commander" = "true" ]; then
+      profiles="$(append_unique_words "$profiles" "tools")"
+    fi
+    if [ "$enable_rabbitmq" = "true" ]; then
+      profiles="$(append_unique_words "$profiles" "queue")"
+    fi
+    if [ "$enable_solr" = "true" ]; then
+      profiles="$(append_unique_words "$profiles" "search")"
+    fi
+    if [ "$enable_minio" = "true" ]; then
+      profiles="$(append_unique_words "$profiles" "storage")"
+    fi
+
+    if [ -n "$profiles" ]; then
+      profiles_csv="$(printf '%s\n' "$profiles" | tr ' ' ',')"
+      set_env_value COMPOSE_PROFILES "$profiles_csv"
+    else
+      set_env_value COMPOSE_PROFILES ""
+    fi
+
+    printf '%s\n' ""
+    printf '%s\n' "=============================="
+    printf '%s\n' "  Configuration saved to .env"
+    printf '%s\n' "=============================="
+    if [ -n "$profiles" ]; then
+      printf '%s\n' "  Active profiles : $profiles_csv"
+    fi
+    printf '%s\n' ""
+    printf '%s\n' "Next steps:"
+    printf '%s\n' "  devstack build   Rebuild the PHP image with your chosen extensions"
+    printf '%s\n' "  devstack up      Start the stack"
+    ;;
   create)
     project="${1:-}"
     if [ -z "$project" ]; then
@@ -875,6 +1084,9 @@ case "$command" in
     fi
     docker compose --profile db --profile nosql --profile cache --profile tools --profile runtimes --profile queue --profile search --profile storage up -d "$@"
     ;;
+  restart)
+    docker compose restart "$@"
+    ;;
   down)
     docker compose down "$@"
     ;;
@@ -957,7 +1169,8 @@ case "$command" in
     ;;
   help|*)
     printf '%s\n' "devstack commands:"
-    printf '%s\n' "  create NAME [T] Create a project from php/static/laravel/wordpress/python/go"
+    printf '%s\n' "  init            Interactive setup wizard (configure .env before building)"
+    printf '%s\n' "  create NAME     Create a project in projects/NAME"
     printf '%s\n' "  projects        List project vhosts"
     printf '%s\n' "  projects NAME   Show project routing metadata"
     printf '%s\n' "  proxy NAME R P  Route project to node/python/go PORT"
@@ -981,6 +1194,7 @@ case "$command" in
     printf '%s\n' "  up --nginx      Select Nginx, then start the stack"
     printf '%s\n' "  up NAME         Set active project/runtime, then start the stack"
     printf '%s\n' "  full            Start the stack with all service profiles"
+    printf '%s\n' "  restart [svc]   Restart all services or one service"
     printf '%s\n' "  down            Stop the stack"
     printf '%s\n' "  build [NAME]    Build local images, service, or service group"
     printf '%s\n' "  build --apache  Select Apache, then build local images"
