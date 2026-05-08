@@ -50,7 +50,7 @@ services:
       context: ./services/php
       args:
         PHP_VERSION: ${PHP_VERSION:-8.3}
-        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole uuid xdebug xsl yaml zip}
+        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole xdebug xsl yaml zip}
         PHP_PECL_EXTENSIONS: ${PHP_PECL_EXTENSIONS:-}
         INSTALL_BLACKFIRE: ${PHP_INSTALL_BLACKFIRE:-false}
         INSTALL_XHPROF: ${PHP_INSTALL_XHPROF:-false}
@@ -102,7 +102,7 @@ services:
       context: ./services/php
       args:
         PHP_VERSION: 8.1
-        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole uuid xdebug xsl yaml zip}
+        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole xdebug xsl yaml zip}
         PHP_PECL_EXTENSIONS: ${PHP_PECL_EXTENSIONS:-}
         INSTALL_BLACKFIRE: ${PHP_INSTALL_BLACKFIRE:-false}
         INSTALL_XHPROF: ${PHP_INSTALL_XHPROF:-false}
@@ -121,7 +121,7 @@ services:
       context: ./services/php
       args:
         PHP_VERSION: 8.2
-        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole uuid xdebug xsl yaml zip}
+        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole xdebug xsl yaml zip}
         PHP_PECL_EXTENSIONS: ${PHP_PECL_EXTENSIONS:-}
         INSTALL_BLACKFIRE: ${PHP_INSTALL_BLACKFIRE:-false}
         INSTALL_XHPROF: ${PHP_INSTALL_XHPROF:-false}
@@ -140,7 +140,7 @@ services:
       context: ./services/php
       args:
         PHP_VERSION: 8.4
-        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole uuid xdebug xsl yaml zip}
+        PHP_EXTENSIONS: ${PHP_EXTENSIONS:-amqp apcu ast bcmath bz2 calendar exif gd gettext gmp igbinary imagick imap intl ldap mbstring memcached mongodb mysqli opcache pcntl pdo_mysql pdo_pgsql pgsql redis soap sockets swoole xdebug xsl yaml zip}
         PHP_PECL_EXTENSIONS: ${PHP_PECL_EXTENSIONS:-}
         INSTALL_BLACKFIRE: ${PHP_INSTALL_BLACKFIRE:-false}
         INSTALL_XHPROF: ${PHP_INSTALL_XHPROF:-false}
